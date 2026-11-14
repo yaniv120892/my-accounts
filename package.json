@@ -1,0 +1,79 @@
+{
+  "name": "my-accounts",
+  "version": "0.1.0",
+  "private": true,
+  "prettier": "@yaniv120892/dev-config/prettier",
+  "engines": {
+    "node": "26.x"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "npm run db:generate && next build",
+    "start": "next start",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run --project unit",
+    "test:watch": "vitest --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:e2e": "playwright test",
+    "db:generate": "prisma generate --schema src/prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema src/prisma/schema.prisma",
+    "db:deploy": "prisma migrate deploy --schema src/prisma/schema.prisma",
+    "db:studio": "prisma studio --schema src/prisma/schema.prisma",
+    "clients:create": "tsx scripts/create-client.mts",
+    "postinstall": "npm run db:generate",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@better-auth/oauth-provider": "1.7.23",
+    "@emotion/cache": "^11.14.0",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^9.5.0",
+    "@mui/material": "^9.5.0",
+    "@mui/material-nextjs": "^9.5.0",
+    "@prisma/client": "6.19.3",
+    "@sentry/nextjs": "^11.11.0",
+    "@vercel/functions": "^3.4.0",
+    "@yaniv120892/app-kit": "github:yaniv120892/app-kit#2983f061ca99b2abcabbcd5f56826f2f8c5b46f2",
+    "@yaniv120892/my-ui": "github:yaniv120892/my-ui#v0.2.0",
+    "@yaniv120892/observability": "github:yaniv120892/observability#v0.3.0",
+    "better-auth": "1.7.23",
+    "next": "16.4.6",
+    "nodemailer": "^10.4.0",
+    "pino": "^10.4.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.4",
+    "@yaniv120892/dev-config": "github:yaniv120892/dev-config#v0.1.6",
+    "eslint": "^10.13.0",
+    "eslint-config-next": "16.2.11",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "husky": "^9.1.7",
+    "jose": "^6.2.13",
+    "jsdom": "^29.1.1",
+    "lint-staged": "^17.6.0",
+    "pino-pretty": "^13.2.0",
+    "prettier": "^3.9.10",
+    "prisma": "6.19.3",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "@prisma/config": {
+      "deepmerge-ts": "^8.0.2"
+    }
+  }
+}
