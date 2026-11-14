@@ -51,8 +51,8 @@ A client whose row has `skip_consent` skips it, as every client the script creat
 Each sign-in logs `signed_in` with `method` (`email_code`, `google`) and `emailHash`, never the
 address. A refused code logs `sign_in_failed` with status and code; it is a person's slip, so it
 does not reach Sentry. Better Auth's rate limit, counted in the `rateLimit` table, allows 10 code
-requests and 30 code attempts per client IP per 15 minutes; every other auth route is left
-uncounted, so reading a session costs no write. It is Better Auth's own limiter, not app-kit's,
+requests and 30 code attempts per client IP per 15 minutes. `/get-session` is left uncounted, so
+reading a session costs no write; every other route keeps Better Auth's own limit. It is Better Auth's own limiter, not app-kit's,
 because it must run before the endpoint and its key is Better Auth's resolved client IP.
 
 Sign-in mail also spends a daily budget per address (20) and for the app

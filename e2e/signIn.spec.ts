@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 
 import { E2E_ORIGIN } from './support/e2eEnvironment';
 import { createTrustedClient, requestSignInCode, signInWithCode } from './support/signIn';
+import { wrongCodeFor } from '../src/test/helpers/wrongCode';
 
 /** A suite app's callback; nothing listens there, so each spec answers it itself. */
 const CLIENT_CALLBACK = 'http://127.0.0.1:3299/api/auth/accounts/callback';
@@ -34,7 +35,7 @@ test.describe('signing in with an emailed code', () => {
     await page.goto('/sign-in');
     const code = await requestSignInCode({ page, email: 'wrong@e2e.test' });
 
-    await page.getByLabel('Sign-in code').fill(code === '000000' ? '111111' : '000000');
+    await page.getByLabel('Sign-in code').fill(wrongCodeFor(code));
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     await expect(page.getByText('That code is wrong or expired')).toBeVisible();

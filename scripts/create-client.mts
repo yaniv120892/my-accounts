@@ -41,7 +41,9 @@ async function refuseToSend(): Promise<never> {
   throw new Error('create-client sends no sign-in codes.');
 }
 
-main().catch((error: unknown) => {
+try {
+  await main();
+} catch (error: unknown) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
-});
+}

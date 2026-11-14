@@ -2,7 +2,7 @@ import { oauthProvider } from '@better-auth/oauth-provider';
 import { waitUntil } from '@vercel/functions';
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
-import { createAuthMiddleware, isAPIError } from 'better-auth/api';
+import { APIError, createAuthMiddleware, isAPIError } from 'better-auth/api';
 import { nextCookies } from 'better-auth/next-js';
 import { emailOTP, jwt } from 'better-auth/plugins';
 import { z } from 'zod';
@@ -37,10 +37,18 @@ import {
  * Better Auth routes no browser may reach. Clients are created only by `scripts/create-client.mts`
  * through the server-only admin API; these are the routes a signed-in person could otherwise use
  * to register, read or change one. `/token` is the JWT plugin's session-token route, which the
- * OIDC provider's `/oauth2/token` replaces.
+ * OIDC provider's `/oauth2/token` replaces. The email-otp routes other than sign-in would store
+ * codes this app never mails: there are no passwords to reset and no address changes.
  */
 export const DISABLED_AUTH_PATHS = [
   '/token',
+  '/email-otp/check-verification-otp',
+  '/email-otp/verify-email',
+  '/email-otp/request-password-reset',
+  '/forget-password/email-otp',
+  '/email-otp/reset-password',
+  '/email-otp/request-email-change',
+  '/email-otp/change-email',
   '/oauth2/register',
   '/oauth2/create-client',
   '/oauth2/get-client',
@@ -54,8 +62,16 @@ export const DISABLED_AUTH_PATHS = [
 const SIGN_IN_PATHS = new Set([CODE_SIGN_IN_PATH, SOCIAL_SIGN_IN_PATH, SOCIAL_CALLBACK_PATH]);
 const MINUTE_SECONDS = 60;
 
-/** What the code request posts; anything else is left for the endpoint to refuse. */
-const signInCodeRequestSchema = z.object({ email: z.string(), type: z.literal('sign-in') });
+const SIGN_IN_CODE_TYPE = 'sign-in';
+
+/** What the code request posts; a malformed one is left for the endpoint to refuse. */
+const codeRequestSchema = z.object({
+  email: z
+    .string()
+    .transform((email) => email.toLowerCase())
+    .pipe(z.email()),
+  type: z.string(),
+});
 
 type CreateAuthOptions = {
   admitSignInCode: SignInCodeAdmission;
@@ -65,6 +81,9 @@ type CreateAuthOptions = {
 };
 
 type BetterAuthLogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+/** The mail callback the email-otp plugin calls once it has stored a code. */
+type VerificationCodeMailer = NonNullable<Parameters<typeof emailOTP>[0]>['sendVerificationOTP'];
 
 /**
  * The one Better Auth configuration. `src/lib/auth.ts` builds the app's instance from it; the
@@ -93,12 +112,12 @@ export function createAuth({
       enabled: true,
       // Shared by every serverless instance; memory would give each one its own count.
       storage: 'database',
-      // The first matching key wins. Only the code routes are counted: the rest would cost a
-      // database write on every session read, authorize and token call.
+      // Session reads are the hottest route and spend nothing, so they cost no counter write.
+      // Every other route keeps Better Auth's own limit (the token endpoint's included).
       customRules: {
         [SEND_SIGN_IN_CODE_PATH]: { window: 15 * MINUTE_SECONDS, max: 10 },
         [CODE_SIGN_IN_PATH]: { window: 15 * MINUTE_SECONDS, max: 30 },
-        '/**': false,
+        '/get-session': false,
       },
     },
     advanced: {
@@ -107,21 +126,7 @@ export function createAuth({
     },
     logger: { level: 'warn', log: logBetterAuth },
     hooks: {
-      before: createAuthMiddleware(async (context) => {
-        if (context.path !== SEND_SIGN_IN_CODE_PATH) {
-          return;
-        }
-        const codeRequest = signInCodeRequestSchema.safeParse(context.body);
-        if (!codeRequest.success) {
-          return;
-        }
-        // Better Auth stores the new code before it calls the sender, voiding the one the person
-        // has, so a mail the budget refuses must stop here, before any code is made.
-        const isAdmitted = await admitSignInCode(codeRequest.data.email.toLowerCase());
-        if (!isAdmitted) {
-          return context.json({ success: true });
-        }
-      }),
+      before: admitSignInCodeBeforeStoring(admitSignInCode),
       after: createAuthMiddleware(async (context) => {
         logSignInOutcome({
           path: context.path,
@@ -136,20 +141,7 @@ export function createAuth({
         expiresIn: SIGN_IN_CODE_TTL_SECONDS,
         allowedAttempts: SIGN_IN_CODE_ALLOWED_ATTEMPTS,
         storeOTP: 'hashed',
-        async sendVerificationOTP({ email, otp, type }, endpointContext) {
-          if (type !== 'sign-in') {
-            logger.info({ type }, 'verification_code_ignored');
-            return;
-          }
-          await sendSignInCode({
-            email,
-            code: otp,
-            request: {
-              url: endpointContext?.request?.url ?? baseURL,
-              headers: endpointContext?.headers ?? new Headers(),
-            },
-          });
-        },
+        sendVerificationOTP: mailSignInCodes({ sendSignInCode, baseURL }),
       }),
       jwt({ disableSettingJwtHeader: true }),
       oauthProvider({
@@ -170,6 +162,53 @@ export function createAuth({
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+/**
+ * Better Auth stores the new code before it calls the mailer, voiding the one the person has, so
+ * a mail the budget refuses must stop here, before any code is made. Only sign-in codes are ever
+ * mailed, so no other type is let through to be stored.
+ */
+function admitSignInCodeBeforeStoring(admitSignInCode: SignInCodeAdmission) {
+  return createAuthMiddleware(async function admitBeforeStoringCode(context) {
+    if (context.path !== SEND_SIGN_IN_CODE_PATH) {
+      return;
+    }
+    const codeRequest = codeRequestSchema.safeParse(context.body);
+    if (!codeRequest.success) {
+      return;
+    }
+    if (codeRequest.data.type !== SIGN_IN_CODE_TYPE) {
+      throw new APIError('BAD_REQUEST', { message: 'Only sign-in codes are sent.' });
+    }
+    const isAdmitted = await admitSignInCode(codeRequest.data.email);
+    if (!isAdmitted) {
+      return context.json({ success: true });
+    }
+  });
+}
+
+function mailSignInCodes({
+  sendSignInCode,
+  baseURL,
+}: {
+  sendSignInCode: SignInCodeSender;
+  baseURL: string;
+}): VerificationCodeMailer {
+  return async function mailSignInCode({ email, otp, type }, endpointContext) {
+    if (type !== SIGN_IN_CODE_TYPE) {
+      logger.info({ type }, 'verification_code_ignored');
+      return;
+    }
+    await sendSignInCode({
+      email,
+      code: otp,
+      request: {
+        url: endpointContext?.request?.url ?? baseURL,
+        headers: endpointContext?.headers ?? new Headers(),
+      },
+    });
+  };
+}
 
 function logSignInOutcome({
   path,

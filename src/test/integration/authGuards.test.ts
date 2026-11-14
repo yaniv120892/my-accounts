@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { createTrustedClient } from '@/lib/oauthClients';
 import { logger } from '@/lib/observability';
 import { SIGN_IN_CODE_ALLOWED_ATTEMPTS } from '@/lib/signInCode';
+import { wrongCodeFor } from '@/test/helpers/wrongCode';
 
 import {
   CLIENT_REDIRECT_URI,
@@ -21,6 +22,13 @@ const EMAIL = 'dana@example.com';
 /** Written out, not imported: dropping one from the app's list must fail this suite. */
 const ROUTES_NO_BROWSER_MAY_REACH = [
   '/token',
+  '/email-otp/check-verification-otp',
+  '/email-otp/verify-email',
+  '/email-otp/request-password-reset',
+  '/forget-password/email-otp',
+  '/email-otp/reset-password',
+  '/email-otp/request-email-change',
+  '/email-otp/change-email',
   '/oauth2/register',
   '/oauth2/create-client',
   '/oauth2/get-client',
@@ -109,7 +117,7 @@ describe('the sign-in code', () => {
     const jar = new CookieJar();
     await requestCode({ jar });
     const code = sender.lastCodeFor(EMAIL);
-    const wrongCode = code === '000000' ? '111111' : '000000';
+    const wrongCode = wrongCodeFor(code);
 
     for (let attempt = 0; attempt < SIGN_IN_CODE_ALLOWED_ATTEMPTS; attempt++) {
       const wrong = await submitCode({ jar, otp: wrongCode });
@@ -158,6 +166,19 @@ describe('the sign-in code', () => {
     expect(signedIn.status).toBe(200);
   });
 
+  it('refuses to make a code of any type but sign-in', async () => {
+    const response = await browserRequest({
+      auth,
+      jar: new CookieJar(),
+      path: '/api/auth/email-otp/send-verification-otp',
+      method: 'POST',
+      json: { email: EMAIL, type: 'forget-password' },
+    });
+
+    expect(response.status).toBe(400);
+    expect(await prisma.verification.count()).toBe(0);
+  });
+
   it('rate-limits code attempts from one address', async () => {
     const jar = new CookieJar();
     await requestCode({ jar });
@@ -183,7 +204,7 @@ describe('the sign-in code', () => {
     const info = vi.spyOn(logger, 'info');
     const jar = new CookieJar();
     await requestCode({ jar });
-    await submitCode({ jar, otp: sender.lastCodeFor(EMAIL) === '000000' ? '111111' : '000000' });
+    await submitCode({ jar, otp: wrongCodeFor(sender.lastCodeFor(EMAIL)) });
 
     const failed = info.mock.calls.find(([, message]) => message === 'sign_in_failed');
     expect(failed?.[0]).toMatchObject({ method: 'email_code', status: 400 });
