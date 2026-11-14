@@ -1,0 +1,7 @@
+/* Only what the MUI theme cannot express. Colours, type and spacing come from
+   the shared theme in @yaniv120892/my-ui. */
+
+html {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
