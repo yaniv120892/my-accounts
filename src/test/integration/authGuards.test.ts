@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createAuth, type Auth } from '@/lib/createAuth';
+import { admitSignInCodeMail } from '@/services/signInCodeMail';
 import { prisma } from '@/lib/db';
 import { createTrustedClient } from '@/lib/oauthClients';
 import { logger } from '@/lib/observability';
@@ -35,7 +36,11 @@ let auth: Auth;
 
 beforeEach(() => {
   sender = capturingSender();
-  auth = createAuth({ sendSignInCode: sender.send, trustedClients: new Set() });
+  auth = createAuth({
+    admitSignInCode: admitSignInCodeMail,
+    sendSignInCode: sender.send,
+    trustedClients: new Set(),
+  });
 });
 
 describe('the discovery document', () => {
@@ -132,6 +137,37 @@ describe('the sign-in code', () => {
 
     expect(statuses.slice(0, 10).every((status) => status === 200)).toBe(true);
     expect(statuses[10]).toBe(429);
+  });
+
+  it('keeps the code already sent when the mail budget refuses another', async () => {
+    const isAdmitted = [true, false];
+    auth = createAuth({
+      admitSignInCode: async () => isAdmitted.shift() ?? false,
+      sendSignInCode: sender.send,
+      trustedClients: new Set(),
+    });
+    const jar = new CookieJar();
+    await requestCode({ jar });
+    const firstCode = sender.lastCodeFor(EMAIL);
+
+    const refused = await requestCode({ jar });
+    const signedIn = await submitCode({ jar, otp: firstCode });
+
+    expect(refused.status).toBe(200);
+    expect(await refused.json()).toEqual({ success: true });
+    expect(signedIn.status).toBe(200);
+  });
+
+  it('rate-limits code attempts from one address', async () => {
+    const jar = new CookieJar();
+    await requestCode({ jar });
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 31; attempt++) {
+      statuses.push((await submitCode({ jar, otp: '000000' })).status);
+    }
+
+    expect(statuses.slice(0, 30)).not.toContain(429);
+    expect(statuses[30]).toBe(429);
   });
 
   it('logs signed_in with the method and a hashed address, never the address', async () => {

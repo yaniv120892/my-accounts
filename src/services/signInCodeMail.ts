@@ -8,7 +8,8 @@ import { emailMessages } from '@/i18n/messages/email';
 import type { SignInCode } from '@/lib/createAuth.types';
 import { dailyBudget } from '@/lib/guards';
 import { hashForLog, mailErrorFields } from '@/lib/logFields';
-import { logger } from '@/lib/observability';
+import type { MailErrorFields } from '@/lib/logFields.types';
+import { logger, reportAndAlert } from '@/lib/observability';
 import { positiveIntegerEnv } from '@/lib/positiveIntegerEnv';
 import { SIGN_IN_CODE_TTL_SECONDS } from '@/lib/signInCode';
 
@@ -19,14 +20,14 @@ const SIGN_IN_MAIL_GLOBAL_DAILY_LIMIT_ENV = 'SIGN_IN_MAIL_GLOBAL_DAILY_LIMIT';
 type SignInCodeMail = { email: string; code: string; locale: Locale };
 
 /**
- * Runs after the request has answered (Better Auth hands it to `waitUntil`), so it never rejects:
- * the person already got the same "sent" answer whether the address exists, the budget refused
- * or the mail server failed, and an unhandled rejection would only crash the function.
+ * Decides, before Better Auth stores a new code, whether this address may be mailed one. Asking
+ * afterwards would replace the code the person already has with one nobody receives.
  *
  * The mail account has a daily sending quota shared by every sign-in, so each mail spends the
- * app's daily budget (and the address's) first.
+ * app's daily budget (and the address's) first. A refusal answers the same "sent" as a success,
+ * so it says nothing about the address.
  */
-export async function sendSignInCodeMail({ email, code, request }: SignInCode): Promise<void> {
+export async function admitSignInCodeMail(email: string): Promise<boolean> {
   const emailHash = hashForLog(email);
   try {
     const decision = await dailyBudget.reserve({
@@ -35,12 +36,39 @@ export async function sendSignInCodeMail({ email, code, request }: SignInCode): 
     });
     if (!decision.isAllowed) {
       logger.warn({ emailHash, reason: decision.reason }, 'sign_in_mail_refused');
-      return;
     }
+    return decision.isAllowed;
+  } catch (error) {
+    reportAndAlert({
+      error,
+      where: 'sign_in_mail_budget',
+      alertType: 'sign_in_mail_budget_failed',
+      alertTitle: 'Sign-in mail budget check failed: no codes are going out',
+    });
+    return false;
+  }
+}
+
+/**
+ * Runs after the request has answered (Better Auth hands it to `waitUntil`), so it never rejects:
+ * an unhandled rejection would only crash the function. A failure is alerted, since the person
+ * was already told the code is on its way and nobody can sign in until it is fixed.
+ */
+export async function sendSignInCodeMail({ email, code, request }: SignInCode): Promise<void> {
+  const emailHash = hashForLog(email);
+  try {
     await sendMail(buildSignInCodeMail({ email, code, locale: requestLocale(request) }));
     logger.info({ emailHash, ship: true }, 'sign_in_mail_sent');
   } catch (error) {
-    logger.error({ emailHash, ...mailErrorFields(error) }, 'sign_in_mail_failed');
+    const fields = mailErrorFields(error);
+    logger.error({ emailHash, ...fields }, 'sign_in_mail_failed');
+    reportAndAlert({
+      // A mail server's message can quote the recipient, so only its codes travel.
+      error: new SignInMailFailedError(fields),
+      where: 'sign_in_mail',
+      alertType: 'sign_in_mail_failed',
+      alertTitle: 'Sign-in code mail failed',
+    });
   }
 }
 
@@ -70,4 +98,13 @@ function signInMailBudget(): DailyBudget {
       fallback: DEFAULT_SIGN_IN_MAIL_GLOBAL_DAILY_LIMIT,
     }),
   };
+}
+
+class SignInMailFailedError extends Error {
+  public constructor({ errorName, errorCode, smtpResponseCode }: MailErrorFields) {
+    super(
+      `Sign-in mail failed (errorName: ${errorName}, errorCode: ${errorCode}, smtpResponseCode: ${smtpResponseCode})`,
+    );
+    this.name = 'SignInMailFailedError';
+  }
 }

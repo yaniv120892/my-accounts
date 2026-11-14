@@ -7,6 +7,7 @@ import { useState, useSyncExternalStore } from 'react';
 
 import { useT } from '@/i18n/useT';
 import { authClient } from '@/lib/authClient';
+import { SIGN_IN_PAGE } from '@/lib/authPaths';
 import {
   forgetPendingSignIn,
   pendingSignInEmail,
@@ -22,9 +23,6 @@ type SignInFormProps = {
   /** Already translated: comes from the `?error=` the Google callback returned with. */
   errorMessage: string | null;
 };
-
-/** Where Better Auth sends a failed Google sign-in; the page reads `error` from it. */
-const GOOGLE_ERROR_PATH = '/sign-in?error=google';
 
 export function SignInForm({ googleEnabled, errorMessage }: SignInFormProps) {
   const t = useT();
@@ -60,7 +58,7 @@ export function SignInForm({ googleEnabled, errorMessage }: SignInFormProps) {
     const { data, error: googleError } = await authClient.signIn.social({
       provider: 'google',
       callbackURL: '/',
-      errorCallbackURL: GOOGLE_ERROR_PATH,
+      errorCallbackURL: googleErrorPath(window.location.search),
     });
     if (googleError || !data?.url) {
       setError(t('auth.error.googleFailed'));
@@ -129,4 +127,17 @@ export function SignInForm({ googleEnabled, errorMessage }: SignInFormProps) {
 
 function noPendingSignInOnServer(): null {
   return null;
+}
+
+/**
+ * Where Better Auth sends a failed Google sign-in: back here with the signed authorize query
+ * kept, so the person can still finish with a code and land in the app that asked. Better Auth
+ * sets `error` on it; the page reads that.
+ */
+function googleErrorPath(search: string): string {
+  const query = new URLSearchParams(search);
+  query.delete('error');
+  query.delete('error_description');
+  query.set('error', 'google');
+  return `${SIGN_IN_PAGE}?${query.toString()}`;
 }

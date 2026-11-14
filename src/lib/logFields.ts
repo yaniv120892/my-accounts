@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { withholdPrismaMessages } from '@yaniv120892/observability';
+import type { MailErrorFields } from './logFields.types';
 
 const LOG_HASH_LENGTH = 12;
 
@@ -12,26 +12,10 @@ export function hashForLog(value: string): string {
 }
 
 /**
- * For a log line that keeps an error out of Sentry. A Prisma error message
- * quotes the query's arguments, an email address included, so only its code
- * is logged.
- */
-export function errorFields(error: unknown): { errorName: string; errorMessage: string } {
-  if (error instanceof Error) {
-    return { errorName: error.name, errorMessage: withholdPrismaMessages(error) };
-  }
-  return { errorName: 'NonError', errorMessage: String(error) };
-}
-
-/**
  * A mail server's rejection can quote the recipient ("550 <dana@…> rejected"),
  * so a send failure is logged by its codes alone.
  */
-export function mailErrorFields(error: unknown): {
-  errorName: string;
-  errorCode: string | null;
-  smtpResponseCode: number | null;
-} {
+export function mailErrorFields(error: unknown): MailErrorFields {
   if (!(error instanceof Error)) {
     return { errorName: 'NonError', errorCode: null, smtpResponseCode: null };
   }

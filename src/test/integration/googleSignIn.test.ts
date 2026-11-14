@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { createAuth, type Auth } from '@/lib/createAuth';
+import { admitSignInCodeMail } from '@/services/signInCodeMail';
 import { createTrustedClient } from '@/lib/oauthClients';
 import type { CreatedClient } from '@/lib/oauthClients.types';
 
@@ -27,7 +28,11 @@ let client: CreatedClient;
 beforeEach(async () => {
   vi.stubEnv('GOOGLE_CLIENT_ID', 'google-client-id');
   vi.stubEnv('GOOGLE_CLIENT_SECRET', 'google-client-secret');
-  auth = createAuth({ sendSignInCode: capturingSender().send, trustedClients: new Set() });
+  auth = createAuth({
+    admitSignInCode: admitSignInCodeMail,
+    sendSignInCode: capturingSender().send,
+    trustedClients: new Set(),
+  });
   await createAccount({ auth, email: 'owner@example.com' });
   client = await createTrustedClient({
     auth,

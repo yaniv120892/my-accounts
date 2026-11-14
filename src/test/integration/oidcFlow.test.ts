@@ -2,6 +2,7 @@ import { createLocalJWKSet, jwtVerify } from 'jose';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createAuth, type Auth } from '@/lib/createAuth';
+import { admitSignInCodeMail } from '@/services/signInCodeMail';
 import { createTrustedClient } from '@/lib/oauthClients';
 import type { CreatedClient } from '@/lib/oauthClients.types';
 
@@ -29,7 +30,11 @@ let client: CreatedClient;
 beforeEach(async () => {
   sender = capturingSender();
   trustedClients = new Set();
-  auth = createAuth({ sendSignInCode: sender.send, trustedClients });
+  auth = createAuth({
+    admitSignInCode: admitSignInCodeMail,
+    sendSignInCode: sender.send,
+    trustedClients,
+  });
   await createAccount({ auth, email: OWNER_EMAIL });
   client = await createTrustedClient({
     auth,

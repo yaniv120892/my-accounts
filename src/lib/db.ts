@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 import { logger } from './observability';
 
@@ -16,14 +16,6 @@ if (process.env.NODE_ENV !== 'production') {
   globalThis.prismaClient = prisma;
 }
 
-const PRISMA_ERROR_CODES = {
-  uniqueConstraintViolation: 'P2002',
-} as const;
-
-export function isUniqueConstraintViolation(error: unknown): boolean {
-  return hasPrismaErrorCode({ error, code: PRISMA_ERROR_CODES.uniqueConstraintViolation });
-}
-
 /**
  * The Prisma or Postgres code in an error event's message. The rest of the
  * message is withheld: it quotes the query's arguments and the failing row.
@@ -31,10 +23,6 @@ export function isUniqueConstraintViolation(error: unknown): boolean {
 export function prismaErrorCode(message: string): string {
   const match = ERROR_CODE.exec(message);
   return match?.[1] ?? match?.[2] ?? 'no code';
-}
-
-function hasPrismaErrorCode({ error, code }: { error: unknown; code: string }): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === code;
 }
 
 function createPrismaClient() {

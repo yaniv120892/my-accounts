@@ -24,7 +24,7 @@ export class MailNotConfiguredError extends Error {
 /**
  * Without SMTP credentials a development server prints the message instead, so email sign-in
  * works locally with nothing configured. Anywhere else the printed code would be a live sign-in
- * secret in shipped logs, so it throws and logs at error: a code that silently goes nowhere
+ * secret in shipped logs, so it throws, and the caller logs and alerts: a code that silently goes nowhere
  * otherwise looks exactly like a slow inbox to everyone, operators included.
  */
 export async function sendMail(mail: OutgoingMail): Promise<void> {
@@ -32,10 +32,6 @@ export async function sendMail(mail: OutgoingMail): Promise<void> {
 
   if (!transporter) {
     if (process.env.NODE_ENV !== 'development') {
-      logger.error(
-        { recipientHash: hashForLog(mail.to), subject: mail.subject },
-        'smtp_not_configured',
-      );
       throw new MailNotConfiguredError();
     }
     printForDevelopment(mail);

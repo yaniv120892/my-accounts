@@ -70,7 +70,8 @@ describe('signInMethodOf', () => {
   it.each([
     ['/sign-in/email-otp', 'email_code'],
     ['/callback/:id', 'google'],
-    ['/sign-in/social', 'other'],
+    ['/sign-in/social', 'google'],
+    ['/sign-in/anonymous', 'other'],
     [undefined, 'other'],
   ] as const)('%s is %s', (path, method) => {
     expect(signInMethodOf(path)).toBe(method);

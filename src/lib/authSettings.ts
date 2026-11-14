@@ -1,6 +1,8 @@
 // What the Better Auth instance reads from the environment, kept apart from it so each rule is
 // testable without a database.
 
+import { CODE_SIGN_IN_PATH, SOCIAL_CALLBACK_PATH, SOCIAL_SIGN_IN_PATH } from './authPaths';
+
 type Env = Readonly<Record<string, string | undefined>>;
 
 export type GoogleCredentials = { clientId: string; clientSecret: string };
@@ -10,8 +12,8 @@ export type SignInMethod = 'email_code' | 'google' | 'other';
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
- * The suite apps that sign in without a consent screen. Only a client listed here and created
- * with `skip_consent` skips it; one created but not listed still asks the person.
+ * The suite apps Better Auth caches and refuses to let anyone change. Whether a client skips the
+ * consent screen is its `skip_consent` column alone; listing it here does not decide that.
  */
 export function trustedClientIds(env: Env = process.env): Set<string> {
   const ids = (env.TRUSTED_CLIENT_IDS ?? '')
@@ -44,18 +46,25 @@ export function allowsLocalDevelopmentRedirect({
   env?: Env;
 }): boolean {
   const isDeployed = Boolean(env.VERCEL_ENV) || env.NODE_ENV === 'production';
-  return !isDeployed && url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname);
+  return !isDeployed && isLoopbackHttpUrl(url);
 }
 
-/** For the `signed_in` log line: which way in the session came from. */
+/** `http://localhost…` and its kin: plain HTTP that never leaves this machine. */
+export function isLoopbackHttpUrl(url: URL): boolean {
+  return url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname);
+}
+
+/** For the sign-in log lines: which way in the session came from. Google is the one social provider. */
 export function signInMethodOf(path: string | undefined): SignInMethod {
-  if (path === '/sign-in/email-otp') {
-    return 'email_code';
+  switch (path) {
+    case CODE_SIGN_IN_PATH:
+      return 'email_code';
+    case SOCIAL_SIGN_IN_PATH:
+    case SOCIAL_CALLBACK_PATH:
+      return 'google';
+    default:
+      return 'other';
   }
-  if (path === '/callback/:id' || path?.startsWith('/callback/google')) {
-    return 'google';
-  }
-  return 'other';
 }
 
 type ClaimsUser = { email: string; emailVerified: boolean; name: string; image?: string | null };

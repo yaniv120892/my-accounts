@@ -5,3 +5,6 @@ export type SignInCode = { email: string; code: string; request: SignInCodeReque
 
 /** Delivers a sign-in code; must never reject, since it runs after the response. */
 export type SignInCodeSender = (signInCode: SignInCode) => Promise<void>;
+
+/** Whether this address may be mailed a code now; asked before Better Auth makes one. */
+export type SignInCodeAdmission = (email: string) => Promise<boolean>;

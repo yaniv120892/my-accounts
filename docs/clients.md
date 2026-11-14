@@ -20,15 +20,23 @@ through my-accounts.
    It prints `ACCOUNTS_CLIENT_ID=…` and `ACCOUNTS_CLIENT_SECRET=…` to stdout, once. The secret is
    stored hashed and cannot be shown again; a lost secret means a new client. Repeat
    `--redirect-uri` for each exact callback (a preview origin, `http://localhost:<port>/…` for
-   local work: plain-HTTP loopback redirects are accepted only off Vercel, outside production).
+   local work). The script takes a plain-HTTP loopback redirect only when `BETTER_AUTH_URL` is
+   itself on this machine, and the server accepts one only off Vercel, outside production.
 
 3. Add the client id to `TRUSTED_CLIENT_IDS` on the my-accounts Vercel project (comma-separated)
-   and redeploy.
+   and redeploy. The list is a cache that also freezes the client against edits; consent is
+   decided by the `skip_consent` column the script sets, listed or not.
 
 The client is confidential (`client_secret_basic`), may use `authorization_code` and
 `refresh_token`, requires PKCE, may ask for `openid profile email offline_access`, and skips the
 consent screen. No HTTP route can create, read, change or delete a client: they are all in
 `DISABLED_AUTH_PATHS`, and the admin API that the script calls is server-only.
+
+## Revoking a client
+
+Delete or disable its `oauthClient` row. A client in `TRUSTED_CLIENT_IDS` is cached by each warm
+instance and never re-read, so also remove its id from the list and redeploy: until then a warm
+instance still accepts it.
 
 ## What the client app configures
 

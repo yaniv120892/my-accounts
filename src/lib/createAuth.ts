@@ -5,8 +5,17 @@ import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { createAuthMiddleware, isAPIError } from 'better-auth/api';
 import { nextCookies } from 'better-auth/next-js';
 import { emailOTP, jwt } from 'better-auth/plugins';
+import { z } from 'zod';
 
-import { appBaseUrl } from './appUrl';
+import { appBaseUrl, appOrigins } from './appUrl';
+import {
+  CODE_SIGN_IN_PATH,
+  CONSENT_PAGE,
+  SEND_SIGN_IN_CODE_PATH,
+  SIGN_IN_PAGE,
+  SOCIAL_CALLBACK_PATH,
+  SOCIAL_SIGN_IN_PATH,
+} from './authPaths';
 import {
   allowsLocalDevelopmentRedirect,
   googleCredentials,
@@ -14,21 +23,18 @@ import {
   signInMethodOf,
   trustedClientIds,
 } from './authSettings';
-import type { SignInCodeSender } from './createAuth.types';
+import type { SignInCodeAdmission, SignInCodeSender } from './createAuth.types';
 import { prisma } from './db';
 import { hashForLog } from './logFields';
-import { logger } from './observability';
+import { logger, reportAndAlert } from './observability';
 import {
   SIGN_IN_CODE_ALLOWED_ATTEMPTS,
   SIGN_IN_CODE_LENGTH,
   SIGN_IN_CODE_TTL_SECONDS,
 } from './signInCode';
 
-export const SIGN_IN_PAGE = '/sign-in';
-export const CONSENT_PAGE = '/consent';
-
 /**
- * Better Auth routes no browser may reach. Clients are created only by `scripts/create-client.ts`
+ * Better Auth routes no browser may reach. Clients are created only by `scripts/create-client.mts`
  * through the server-only admin API; these are the routes a signed-in person could otherwise use
  * to register, read or change one. `/token` is the JWT plugin's session-token route, which the
  * OIDC provider's `/oauth2/token` replaces.
@@ -45,10 +51,14 @@ export const DISABLED_AUTH_PATHS = [
   '/oauth2/client/rotate-keys',
 ];
 
-const SIGN_IN_PATHS = new Set(['/sign-in/email-otp', '/sign-in/social', '/callback/:id']);
+const SIGN_IN_PATHS = new Set([CODE_SIGN_IN_PATH, SOCIAL_SIGN_IN_PATH, SOCIAL_CALLBACK_PATH]);
 const MINUTE_SECONDS = 60;
 
+/** What the code request posts; anything else is left for the endpoint to refuse. */
+const signInCodeRequestSchema = z.object({ email: z.string(), type: z.literal('sign-in') });
+
 type CreateAuthOptions = {
+  admitSignInCode: SignInCodeAdmission;
   sendSignInCode: SignInCodeSender;
   /** Read once at boot; a test passes its own set and adds the clients it creates. */
   trustedClients?: Set<string>;
@@ -62,6 +72,7 @@ type BetterAuthLogLevel = 'debug' | 'info' | 'warn' | 'error';
  * every other setting it exercises is the production one.
  */
 export function createAuth({
+  admitSignInCode,
   sendSignInCode,
   trustedClients = trustedClientIds(),
 }: CreateAuthOptions) {
@@ -71,7 +82,7 @@ export function createAuth({
   return betterAuth({
     appName: 'My account',
     baseURL,
-    trustedOrigins: [baseURL],
+    trustedOrigins: appOrigins(),
     database: prismaAdapter(prisma, { provider: 'postgresql' }),
     disabledPaths: DISABLED_AUTH_PATHS,
     session: {
@@ -82,18 +93,35 @@ export function createAuth({
       enabled: true,
       // Shared by every serverless instance; memory would give each one its own count.
       storage: 'database',
+      // The first matching key wins. Only the code routes are counted: the rest would cost a
+      // database write on every session read, authorize and token call.
       customRules: {
-        '/email-otp/send-verification-otp': { window: 15 * MINUTE_SECONDS, max: 10 },
-        '/sign-in/email-otp': { window: 15 * MINUTE_SECONDS, max: 30 },
+        [SEND_SIGN_IN_CODE_PATH]: { window: 15 * MINUTE_SECONDS, max: 10 },
+        [CODE_SIGN_IN_PATH]: { window: 15 * MINUTE_SECONDS, max: 30 },
+        '/**': false,
       },
     },
     advanced: {
       // The mail goes out after the response, so its timing says nothing about the address.
       backgroundTasks: { handler: waitUntil },
-      ipAddress: { ipAddressHeaders: ['x-forwarded-for'] },
     },
     logger: { level: 'warn', log: logBetterAuth },
     hooks: {
+      before: createAuthMiddleware(async (context) => {
+        if (context.path !== SEND_SIGN_IN_CODE_PATH) {
+          return;
+        }
+        const codeRequest = signInCodeRequestSchema.safeParse(context.body);
+        if (!codeRequest.success) {
+          return;
+        }
+        // Better Auth stores the new code before it calls the sender, voiding the one the person
+        // has, so a mail the budget refuses must stop here, before any code is made.
+        const isAdmitted = await admitSignInCode(codeRequest.data.email.toLowerCase());
+        if (!isAdmitted) {
+          return context.json({ success: true });
+        }
+      }),
       after: createAuthMiddleware(async (context) => {
         logSignInOutcome({
           path: context.path,
@@ -181,6 +209,9 @@ function logSignInOutcome({
 /**
  * Better Auth's own log lines, through the app's logger. Only the message and an error's name go
  * in: the other arguments can carry the request body, an address included.
+ *
+ * Better Auth answers its own 500s, so they never reach `onRequestError`; an unexpected error it
+ * logs is reported and alerted here instead. An `APIError` is an answer it chose, not a fault.
  */
 function logBetterAuth(level: BetterAuthLogLevel, message: string, ...rest: unknown[]): void {
   const error = rest.find((argument) => argument instanceof Error);
@@ -188,6 +219,14 @@ function logBetterAuth(level: BetterAuthLogLevel, message: string, ...rest: unkn
   switch (level) {
     case 'error':
       logger.error(fields, message);
+      if (error && !isAPIError(error)) {
+        reportAndAlert({
+          error,
+          where: 'better_auth',
+          alertType: 'auth_server_error',
+          alertTitle: 'Sign-in server error',
+        });
+      }
       break;
     case 'warn':
       logger.warn(fields, message);

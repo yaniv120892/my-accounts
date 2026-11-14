@@ -13,14 +13,18 @@ if (existsSync('.env')) {
 process.env.LOG_LEVEL ??= 'warn';
 
 async function main(): Promise<void> {
-  const request = parseCreateClientArguments(process.argv.slice(2));
+  const { appBaseUrl } = await import('../src/lib/appUrl');
+  const request = parseCreateClientArguments({
+    argv: process.argv.slice(2),
+    accountsUrl: appBaseUrl(),
+  });
   const { createAuth } = await import('../src/lib/createAuth');
   const { createTrustedClient } = await import('../src/lib/oauthClients');
   const { prisma } = await import('../src/lib/db');
 
   try {
     // Creating a client sends no mail; a code asked for through this instance would be a bug.
-    const auth = createAuth({ sendSignInCode: refuseToSend });
+    const auth = createAuth({ admitSignInCode: refuseToSend, sendSignInCode: refuseToSend });
     const { clientId, clientSecret } = await createTrustedClient({ auth, request });
     process.stdout.write(
       `ACCOUNTS_CLIENT_ID=${clientId}\nACCOUNTS_CLIENT_SECRET=${clientSecret}\n`,
@@ -33,7 +37,7 @@ async function main(): Promise<void> {
   }
 }
 
-async function refuseToSend(): Promise<void> {
+async function refuseToSend(): Promise<never> {
   throw new Error('create-client sends no sign-in codes.');
 }
 

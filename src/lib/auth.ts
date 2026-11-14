@@ -1,5 +1,8 @@
-import { sendSignInCodeMail } from '@/services/signInCodeMail';
+import { admitSignInCodeMail, sendSignInCodeMail } from '@/services/signInCodeMail';
 
 import { createAuth } from './createAuth';
 
-export const auth = createAuth({ sendSignInCode: sendSignInCodeMail });
+export const auth = createAuth({
+  admitSignInCode: admitSignInCodeMail,
+  sendSignInCode: sendSignInCodeMail,
+});

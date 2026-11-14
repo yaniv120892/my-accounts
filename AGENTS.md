@@ -20,19 +20,8 @@ Short docs, one topic each. Load the one whose trigger matches your task.
   design decision.
 - [docs/sign-in.md](docs/sign-in.md) — the emailed code, Google, sessions, and how a sign-in
   resumes an authorize. Load before changing `src/lib/createAuth.ts`, a sign-in or consent page,
-  or `src/lib/authClient.ts`.
+  or `src/lib/authClient.ts`, and before upgrading Better Auth or regenerating the Prisma schema.
 - [docs/clients.md](docs/clients.md) — registering a suite app as a trusted OIDC client and what
   the client app configures. Load before creating a client or changing `scripts/create-client.mts`.
 - [docs/deployment.md](docs/deployment.md) — Vercel, Neon and every environment variable. Load
   before changing `vercel.json`, an env var, or when a build fails on the database.
-
-## Better Auth
-
-Better Auth 1.7.23 and `@better-auth/oauth-provider` 1.7.23 are pinned exactly. Their types and
-`node_modules/@better-auth/oauth-provider/dist` are the reference; the website documents newer
-releases. `src/lib/createAuth.ts` is the only configuration, and the integration suite builds its
-instance from the same function, so a setting changed there is the setting tested.
-
-The Prisma schema is generated, not hand-written: after changing a plugin or option that adds
-fields, run `npx auth@1.7.23 generate --config src/lib/auth.ts --output src/prisma/schema.prisma`
-then `npm run db:migrate`.
