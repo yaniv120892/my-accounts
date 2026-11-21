@@ -7,7 +7,7 @@ import {
   sendSignInCodeMail,
 } from '@/services/signInCodeMail';
 
-import { fakeCounterStore } from './helpers/network';
+import { fakeCounterStore, offlineNetwork } from './helpers/network';
 
 const smtpSend = vi.hoisted(() => vi.fn());
 
@@ -75,6 +75,16 @@ describe('admitSignInCodeMail', () => {
 
     expect(decisions.filter(Boolean)).toHaveLength(SIGN_IN_MAIL_ADDRESS_DAILY_LIMIT);
     expect(decisions.at(-1)).toBe(false);
+  });
+
+  it('counts under its own name in the counter store the suite apps share', async () => {
+    await admitSignInCodeMail(EMAIL);
+
+    const countedKeys = offlineNetwork.mock.calls.map(([, init]) => String(init?.body));
+    expect(countedKeys.length).toBeGreaterThan(0);
+    for (const body of countedKeys) {
+      expect(body).toContain('"accounts_sign_in_mail_budget:');
+    }
   });
 
   it('admits nothing while the counter store is down', async () => {

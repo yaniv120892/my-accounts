@@ -56,7 +56,8 @@ reading a session costs no write; every other route keeps Better Auth's own limi
 because it must run before the endpoint and its key is Better Auth's resolved client IP.
 
 Sign-in mail also spends a daily budget per address (20) and for the app
-(`SIGN_IN_MAIL_GLOBAL_DAILY_LIMIT`), which fails closed. The budget is asked in a `before` hook on
+(`SIGN_IN_MAIL_GLOBAL_DAILY_LIMIT`), which fails closed. The counter store is shared with the
+other suite apps, so every counter this app names starts with `accounts_`. The budget is asked in a `before` hook on
 the code request, ahead of Better Auth: Better Auth stores the new code before it calls the sender,
 so a refusal there would void the code the person already has. A refused request answers the same
 "sent". A mail that fails to send, a budget check that throws, and any unexpected error Better Auth

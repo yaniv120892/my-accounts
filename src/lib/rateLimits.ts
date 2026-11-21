@@ -5,9 +5,12 @@ import { rateLimiter } from './guards';
 
 const HOUR_SECONDS = 60 * 60;
 
-/** Every probe wakes a scale-to-zero database; an uptime monitor polls far below this. */
+/**
+ * Every probe wakes a scale-to-zero database; an uptime monitor polls far below this. Named for
+ * this app: the counter store is shared with the other suite apps.
+ */
 export const DEEP_HEALTH_ADDRESS_RATE_LIMIT: RateLimitPolicy = {
-  name: 'deep_health_ip',
+  name: 'accounts_deep_health_ip',
   limit: 10,
   windowSeconds: HOUR_SECONDS,
   whenStoreUnavailable: 'allow',

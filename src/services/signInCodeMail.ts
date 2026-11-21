@@ -91,7 +91,9 @@ export function buildSignInCodeMail({ email, code, locale }: SignInCodeMail): Ou
 
 function signInMailBudget(): DailyBudget {
   return {
-    feature: 'sign_in_mail',
+    // The counter store is shared with the other suite apps, whose budgets count under
+    // `sign_in_mail`; this app's own name keeps their counts apart.
+    feature: 'accounts_sign_in_mail',
     subjectLimit: SIGN_IN_MAIL_ADDRESS_DAILY_LIMIT,
     globalLimit: positiveIntegerEnv({
       name: SIGN_IN_MAIL_GLOBAL_DAILY_LIMIT_ENV,
