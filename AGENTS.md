@@ -14,7 +14,7 @@ Short docs, one topic each. Load the one whose trigger matches your task.
 
 - [Suite architecture](https://github.com/yaniv120892/platform) (locally `../platform`) — how the
   My apps and shared packages fit together. Its `DECISIONS.md` "Accounts" row is why this app
-  exists. Load its `CLAUDE.md` before adding a store, cron, external API or alert, or code a
+  exists. Load its `AGENTS.md` before adding a store, cron, external API or alert, or code a
   sibling app could reuse. Update it in the same change when a fact there moves.
 - [DECISIONS.md](DECISIONS.md) — why the app is built this way. Load before reversing or adding a
   design decision.
