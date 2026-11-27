@@ -133,6 +133,18 @@ describe('instrumentation', () => {
       );
     });
 
+    it('warns when only the server-side SENTRY_DSN is set, which initSentry ignores', async () => {
+      vi.stubEnv('SENTRY_DSN', 'https://public@o0.ingest.sentry.example/0');
+      const warn = vi.spyOn(logger, 'warn');
+
+      await register();
+
+      expect(warn).toHaveBeenCalledWith(
+        { missing: ['NEXT_PUBLIC_SENTRY_DSN'] },
+        'sentry_errors_not_configured',
+      );
+    });
+
     it('warns at boot when Telegram ops alerts are not configured', async () => {
       vi.stubEnv('TELEGRAM_BOT_TOKEN', 'bot-token');
       const warn = vi.spyOn(logger, 'warn');

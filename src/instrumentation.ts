@@ -5,33 +5,27 @@ import type { logger } from '@/lib/observability';
 
 type IntegrationCheck = { config: ObservabilityConfig; logger: typeof logger };
 
-type ProductionIntegration = {
-  event: string;
-  envVars: string[];
-  isConfigured: (config: ObservabilityConfig) => boolean;
-};
+type ProductionIntegration = { event: string; envVars: string[] };
 
 const REQUIRED_ENV_VARS = ['DATABASE_URL', 'BETTER_AUTH_SECRET'];
 
 /**
  * Each one is off when its variables are unset, which on production means an error or a log line
- * reaches no one, silently. The boot names what is missing instead.
+ * reaches no one, silently. The boot names what is missing instead. Each lists the variables the
+ * code that uses it reads: `initSentry` reads only `NEXT_PUBLIC_SENTRY_DSN`, not `SENTRY_DSN`.
  */
 const PRODUCTION_INTEGRATIONS: ProductionIntegration[] = [
   {
     event: 'better_stack_logs_not_configured',
     envVars: ['BETTERSTACK_SOURCE_URL', 'BETTERSTACK_SOURCE_TOKEN'],
-    isConfigured: (config) => config.betterStack !== null,
   },
   {
     event: 'sentry_errors_not_configured',
     envVars: ['NEXT_PUBLIC_SENTRY_DSN'],
-    isConfigured: (config) => config.sentryDsn !== null,
   },
   {
     event: 'telegram_alerts_not_configured',
     envVars: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_ALERT_CHAT_ID'],
-    isConfigured: (config) => config.telegram !== null,
   },
 ];
 
@@ -67,12 +61,11 @@ function warnAboutUnconfiguredIntegrations({ config, logger }: IntegrationCheck)
   if (config.environment !== 'production' || isLocalDevServer) {
     return;
   }
-  for (const integration of PRODUCTION_INTEGRATIONS) {
-    if (integration.isConfigured(config)) {
-      continue;
+  for (const { event, envVars } of PRODUCTION_INTEGRATIONS) {
+    const missing = envVars.filter((name) => !process.env[name]?.trim());
+    if (missing.length > 0) {
+      logger.warn({ missing }, event);
     }
-    const missing = integration.envVars.filter((name) => !process.env[name]?.trim());
-    logger.warn({ missing }, integration.event);
   }
 }
 
