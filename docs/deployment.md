@@ -26,6 +26,7 @@ own branch first. That needs both `DATABASE_URL` (pooled) and `DATABASE_URL_UNPO
 | `BETTERSTACK_SOURCE_URL`/`_TOKEN`                               | production | The `my-accounts` HTTP source in Better Stack; warn and above ship there. Unset on production, the boot logs `better_stack_logs_not_configured`. |
 | `NEXT_PUBLIC_SENTRY_DSN`                                        | production | Sentry project `my-accounts`, errors only. Unset on production, the boot logs `sentry_errors_not_configured`.                                    |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALERT_CHAT_ID`                  | production | The suite's ops-alert bot and chat, the same values as the other apps. Unset on production, the boot logs `telegram_alerts_not_configured`.      |
+| `OPS_SMOKE_SECRET`                                              | no         | Bearer secret for the smoke route under "Proving error alerts"; unset, the route answers 404.                                                    |
 | `SENTRY_ORG`/`_PROJECT`/`_AUTH_TOKEN`, `POSTHOG_PROJECT_KEY`    | no         | Source-map upload and product events; each is off when unset.                                                                                    |
 | `LOG_LEVEL`                                                     | no         | Defaults to `info`.                                                                                                                              |
 
@@ -35,3 +36,16 @@ own branch first. That needs both `DATABASE_URL` (pooled) and `DATABASE_URL_UNPO
 
 `/api/health` is liveness and touches nothing; `/api/health/deep` probes the database and is
 rate-limited per address.
+
+## Proving error alerts
+
+`POST /api/ops/smoke-error` throws on purpose, so the request fails like any unhandled 5xx: it is
+logged as `unhandled_request_error`, reported to Sentry, and alerted on Telegram. It answers 404
+while `OPS_SMOKE_SECRET` is unset and 401 without the secret as a bearer token:
+
+```sh
+curl -X POST -H "Authorization: Bearer $OPS_SMOKE_SECRET" https://yaniv-accounts.vercel.app/api/ops/smoke-error
+```
+
+Telegram alerts are capped at a few per alert type per hour on each instance, so repeated calls
+stop being alerted.
