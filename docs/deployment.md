@@ -41,7 +41,8 @@ rate-limited per address.
 
 `POST /api/ops/smoke-error` throws on purpose, so the request fails like any unhandled 5xx: it is
 logged as `unhandled_request_error`, reported to Sentry, and alerted on Telegram. It answers 404
-while `OPS_SMOKE_SECRET` is unset and 401 without the secret as a bearer token:
+while `OPS_SMOKE_SECRET` is unset, 429 past five calls per address per hour, and 401 (logged as
+`ops_smoke_unauthorized`) without the secret as a bearer token:
 
 ```sh
 curl -X POST -H "Authorization: Bearer $OPS_SMOKE_SECRET" https://yaniv-accounts.vercel.app/api/ops/smoke-error
