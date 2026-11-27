@@ -3,10 +3,31 @@ import type { Instrumentation } from 'next';
 
 import type { logger } from '@/lib/observability';
 
-type LogSourceCheck = { config: ObservabilityConfig; logger: typeof logger };
+type IntegrationCheck = { config: ObservabilityConfig; logger: typeof logger };
+
+type ProductionIntegration = { event: string; envVars: string[] };
 
 const REQUIRED_ENV_VARS = ['DATABASE_URL', 'BETTER_AUTH_SECRET'];
-const BETTER_STACK_ENV_VARS = ['BETTERSTACK_SOURCE_URL', 'BETTERSTACK_SOURCE_TOKEN'];
+
+/**
+ * Each one is off when its variables are unset, which on production means an error or a log line
+ * reaches no one, silently. The boot names what is missing instead. Each lists the variables the
+ * code that uses it reads: `initSentry` reads only `NEXT_PUBLIC_SENTRY_DSN`, not `SENTRY_DSN`.
+ */
+const PRODUCTION_INTEGRATIONS: ProductionIntegration[] = [
+  {
+    event: 'better_stack_logs_not_configured',
+    envVars: ['BETTERSTACK_SOURCE_URL', 'BETTERSTACK_SOURCE_TOKEN'],
+  },
+  {
+    event: 'sentry_errors_not_configured',
+    envVars: ['NEXT_PUBLIC_SENTRY_DSN'],
+  },
+  {
+    event: 'telegram_alerts_not_configured',
+    envVars: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_ALERT_CHAT_ID'],
+  },
+];
 
 /**
  * The settings the server cannot run without fail the boot, not the first request. Every other
@@ -27,23 +48,25 @@ export async function register(): Promise<void> {
       import('@yaniv120892/observability'),
       import('@/lib/observability'),
     ]);
-    warnWhenProductionLogsStayLocal({ config: loadObservabilityConfig(), logger });
+    warnAboutUnconfiguredIntegrations({ config: loadObservabilityConfig(), logger });
   }
 }
 
 /**
- * Without a log source, production logs reach only the platform's runtime logs, where the suite's
- * log checks never look. Logging still works, so this warns instead of failing the boot.
+ * Logging still works without these, so a missing one warns instead of failing the boot. Off
+ * production they are optional.
  */
-function warnWhenProductionLogsStayLocal({ config, logger }: LogSourceCheck): void {
+function warnAboutUnconfiguredIntegrations({ config, logger }: IntegrationCheck): void {
   const isLocalDevServer = process.env.NODE_ENV === 'development';
-  const productionLogsStayLocal =
-    config.environment === 'production' && !isLocalDevServer && config.betterStack === null;
-  if (!productionLogsStayLocal) {
+  if (config.environment !== 'production' || isLocalDevServer) {
     return;
   }
-  const missing = BETTER_STACK_ENV_VARS.filter((name) => !process.env[name]?.trim());
-  logger.warn({ missing }, 'better_stack_logs_not_configured');
+  for (const { event, envVars } of PRODUCTION_INTEGRATIONS) {
+    const missing = envVars.filter((name) => !process.env[name]?.trim());
+    if (missing.length > 0) {
+      logger.warn({ missing }, event);
+    }
+  }
 }
 
 /**
