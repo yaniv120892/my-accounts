@@ -15,6 +15,13 @@ describe('prismaErrorCode', () => {
     expect(prismaErrorCode(message)).toBe('23514');
   });
 
+  it('reads the Postgres code from a failed raw query', () => {
+    const message =
+      'Invalid `prisma.$queryRaw()` invocation:\n\nRaw query failed. Code: `22012`. Message: `ERROR: division by zero`';
+
+    expect(prismaErrorCode(message)).toBe('22012');
+  });
+
   it('reads a Prisma error code', () => {
     expect(prismaErrorCode('Unique constraint failed on the fields: (`email`) P2002')).toBe(
       'P2002',
@@ -47,6 +54,23 @@ describe('logPrismaError', () => {
 
     expect(warn).toHaveBeenCalledWith(
       { target: DRIVER_TARGET, code: '57P01' },
+      'prisma_connection_closed',
+    );
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('logs a closed connection that carries no Postgres code as a warning', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+
+    logPrismaError({
+      target: DRIVER_TARGET,
+      message: 'Error in PostgreSQL connection: Error { kind: Closed, cause: None }',
+      timestamp: new Date(),
+    });
+
+    expect(warn).toHaveBeenCalledWith(
+      { target: DRIVER_TARGET, code: 'no code' },
       'prisma_connection_closed',
     );
     expect(error).not.toHaveBeenCalled();

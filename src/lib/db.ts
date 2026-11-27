@@ -8,12 +8,14 @@ declare global {
   var prismaClient: LoggingPrismaClient | undefined;
 }
 
-const ERROR_CODE = /\b(P\d{4})\b|code: "(\w+)"|SqlState\((?:E(\w+)|Other\("(\w+)"\))\)/;
+const ERROR_CODE =
+  /\b(P\d{4})\b|code: "(\w+)"|Code: `(\w+)`|SqlState\((?:E(\w+)|Other\("(\w+)"\))\)/;
 
 /**
- * The driver's background task logs this when the server closes an idle pooled
- * connection, as a database that suspends its idle compute does. No query is
- * running, and a query that then fails logs its own error event.
+ * Any error the driver's background connection task logs, whatever its code: a
+ * database that suspends its idle compute closes the pooled connection without
+ * one. No query runs on that task, so a real outage still logs prisma_error
+ * from the query that fails.
  */
 const CLOSED_CONNECTION = {
   target: 'quaint::connector::postgres::native',

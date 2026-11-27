@@ -18,18 +18,17 @@ async function closeTheAppConnections(): Promise<void> {
     WHERE datname = current_database() AND usename = current_user AND pid <> pg_backend_pid()`;
 }
 
-describe('a database connection closed while idle', () => {
-  it('leaves a failed query logged as prisma_error', async () => {
+describe('a failed query', () => {
+  it('is logged as prisma_error with its Postgres code', async () => {
     const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
 
     await expect(prisma.$queryRaw`SELECT 1 / 0`).rejects.toThrow();
 
-    expect(error).toHaveBeenCalledWith(
-      { target: '$queryRaw', code: expect.any(String) },
-      'prisma_error',
-    );
+    expect(error).toHaveBeenCalledWith({ target: '$queryRaw', code: '22012' }, 'prisma_error');
   });
+});
 
+describe('a database connection closed while idle', () => {
   it('is logged as a warning with its Postgres code, not as prisma_error', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
