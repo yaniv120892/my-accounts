@@ -16,6 +16,17 @@ export const DEEP_HEALTH_ADDRESS_RATE_LIMIT: RateLimitPolicy = {
   whenStoreUnavailable: 'allow',
 };
 
+/**
+ * Each smoke call is a Sentry event and an error log, which only Telegram caps. Counted before the
+ * secret is checked, so it also bounds guessing.
+ */
+export const OPS_SMOKE_ADDRESS_RATE_LIMIT: RateLimitPolicy = {
+  name: 'accounts_ops_smoke_ip',
+  limit: 5,
+  windowSeconds: HOUR_SECONDS,
+  whenStoreUnavailable: 'allow',
+};
+
 export const RATE_LIMITED_MESSAGE = 'Too many requests. Wait a moment and try again.';
 
 /** For a route answered in JSON: null when the request may go on, else the 429 or 503 to send. */
