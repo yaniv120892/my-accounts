@@ -2,6 +2,7 @@
 import * as Sentry from '@sentry/nextjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '@/lib/observability';
 import { expectNoQuotedData, prismaErrorQuotingData } from '@/test/helpers/prismaErrors';
 import { enableSentry, sentEnvelopes, sentPayloads } from '@/test/helpers/sentryCapture';
 
@@ -29,6 +30,7 @@ describe('instrumentation', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     sentEnvelopes.length = 0;
   });
 
@@ -48,5 +50,63 @@ describe('instrumentation', () => {
 
     expect(sentPayloads()).toContain('P2010');
     expectNoQuotedData(sentPayloads());
+  });
+
+  describe('Better Stack on production', () => {
+    beforeEach(() => {
+      vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+      vi.stubEnv('VERCEL_ENV', 'production');
+      vi.stubEnv('BETTERSTACK_SOURCE_URL', '');
+      vi.stubEnv('BETTERSTACK_SOURCE_TOKEN', '');
+    });
+
+    it('warns at boot when its log source is not configured', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+
+      await register();
+
+      expect(warn).toHaveBeenCalledWith(
+        { missing: ['BETTERSTACK_SOURCE_URL', 'BETTERSTACK_SOURCE_TOKEN'] },
+        'better_stack_logs_not_configured',
+      );
+    });
+
+    it('names only the variable that is missing or blank', async () => {
+      vi.stubEnv('BETTERSTACK_SOURCE_URL', 'https://in.logs.betterstack.example');
+      vi.stubEnv('BETTERSTACK_SOURCE_TOKEN', '  ');
+      const warn = vi.spyOn(logger, 'warn');
+
+      await register();
+
+      expect(warn).toHaveBeenCalledWith(
+        { missing: ['BETTERSTACK_SOURCE_TOKEN'] },
+        'better_stack_logs_not_configured',
+      );
+    });
+
+    it('stays quiet when the log source is configured', async () => {
+      vi.stubEnv('BETTERSTACK_SOURCE_URL', 'https://in.logs.betterstack.example');
+      vi.stubEnv('BETTERSTACK_SOURCE_TOKEN', 'source-token');
+      const warn = vi.spyOn(logger, 'warn');
+
+      await register();
+
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a preview deployment', { VERCEL_ENV: 'preview' }],
+      ['a local dev server', { NODE_ENV: 'development' }],
+      ['the Edge runtime', { NEXT_RUNTIME: 'edge' }],
+    ])('stays quiet on %s', async (_label, environment) => {
+      for (const [name, value] of Object.entries(environment)) {
+        vi.stubEnv(name, value);
+      }
+      const warn = vi.spyOn(logger, 'warn');
+
+      await register();
+
+      expect(warn).not.toHaveBeenCalled();
+    });
   });
 });
