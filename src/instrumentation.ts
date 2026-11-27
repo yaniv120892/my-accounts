@@ -3,10 +3,37 @@ import type { Instrumentation } from 'next';
 
 import type { logger } from '@/lib/observability';
 
-type LogSourceCheck = { config: ObservabilityConfig; logger: typeof logger };
+type IntegrationCheck = { config: ObservabilityConfig; logger: typeof logger };
+
+type ProductionIntegration = {
+  event: string;
+  envVars: string[];
+  isConfigured: (config: ObservabilityConfig) => boolean;
+};
 
 const REQUIRED_ENV_VARS = ['DATABASE_URL', 'BETTER_AUTH_SECRET'];
-const BETTER_STACK_ENV_VARS = ['BETTERSTACK_SOURCE_URL', 'BETTERSTACK_SOURCE_TOKEN'];
+
+/**
+ * Each one is off when its variables are unset, which on production means an error or a log line
+ * reaches no one, silently. The boot names what is missing instead.
+ */
+const PRODUCTION_INTEGRATIONS: ProductionIntegration[] = [
+  {
+    event: 'better_stack_logs_not_configured',
+    envVars: ['BETTERSTACK_SOURCE_URL', 'BETTERSTACK_SOURCE_TOKEN'],
+    isConfigured: (config) => config.betterStack !== null,
+  },
+  {
+    event: 'sentry_errors_not_configured',
+    envVars: ['NEXT_PUBLIC_SENTRY_DSN'],
+    isConfigured: (config) => config.sentryDsn !== null,
+  },
+  {
+    event: 'telegram_alerts_not_configured',
+    envVars: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_ALERT_CHAT_ID'],
+    isConfigured: (config) => config.telegram !== null,
+  },
+];
 
 /**
  * The settings the server cannot run without fail the boot, not the first request. Every other
@@ -27,23 +54,26 @@ export async function register(): Promise<void> {
       import('@yaniv120892/observability'),
       import('@/lib/observability'),
     ]);
-    warnWhenProductionLogsStayLocal({ config: loadObservabilityConfig(), logger });
+    warnAboutUnconfiguredIntegrations({ config: loadObservabilityConfig(), logger });
   }
 }
 
 /**
- * Without a log source, production logs reach only the platform's runtime logs, where the suite's
- * log checks never look. Logging still works, so this warns instead of failing the boot.
+ * Logging still works without these, so a missing one warns instead of failing the boot. Off
+ * production they are optional.
  */
-function warnWhenProductionLogsStayLocal({ config, logger }: LogSourceCheck): void {
+function warnAboutUnconfiguredIntegrations({ config, logger }: IntegrationCheck): void {
   const isLocalDevServer = process.env.NODE_ENV === 'development';
-  const productionLogsStayLocal =
-    config.environment === 'production' && !isLocalDevServer && config.betterStack === null;
-  if (!productionLogsStayLocal) {
+  if (config.environment !== 'production' || isLocalDevServer) {
     return;
   }
-  const missing = BETTER_STACK_ENV_VARS.filter((name) => !process.env[name]?.trim());
-  logger.warn({ missing }, 'better_stack_logs_not_configured');
+  for (const integration of PRODUCTION_INTEGRATIONS) {
+    if (integration.isConfigured(config)) {
+      continue;
+    }
+    const missing = integration.envVars.filter((name) => !process.env[name]?.trim());
+    logger.warn({ missing }, integration.event);
+  }
 }
 
 /**

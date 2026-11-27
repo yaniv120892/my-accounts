@@ -91,7 +91,7 @@ describe('instrumentation', () => {
 
       await register();
 
-      expect(warn).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalledWith(expect.anything(), 'better_stack_logs_not_configured');
     });
 
     it.each([
@@ -102,6 +102,62 @@ describe('instrumentation', () => {
       for (const [name, value] of Object.entries(environment)) {
         vi.stubEnv(name, value);
       }
+      const warn = vi.spyOn(logger, 'warn');
+
+      await register();
+
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('error alerts on production', () => {
+    beforeEach(() => {
+      vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+      vi.stubEnv('VERCEL_ENV', 'production');
+      vi.stubEnv('BETTERSTACK_SOURCE_URL', 'https://in.logs.betterstack.example');
+      vi.stubEnv('BETTERSTACK_SOURCE_TOKEN', 'source-token');
+      vi.stubEnv('SENTRY_DSN', '');
+      vi.stubEnv('NEXT_PUBLIC_SENTRY_DSN', '');
+      vi.stubEnv('TELEGRAM_BOT_TOKEN', '');
+      vi.stubEnv('TELEGRAM_ALERT_CHAT_ID', '');
+    });
+
+    it('warns at boot when Sentry has no DSN', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+
+      await register();
+
+      expect(warn).toHaveBeenCalledWith(
+        { missing: ['NEXT_PUBLIC_SENTRY_DSN'] },
+        'sentry_errors_not_configured',
+      );
+    });
+
+    it('warns at boot when Telegram ops alerts are not configured', async () => {
+      vi.stubEnv('TELEGRAM_BOT_TOKEN', 'bot-token');
+      const warn = vi.spyOn(logger, 'warn');
+
+      await register();
+
+      expect(warn).toHaveBeenCalledWith(
+        { missing: ['TELEGRAM_ALERT_CHAT_ID'] },
+        'telegram_alerts_not_configured',
+      );
+    });
+
+    it('stays quiet when Sentry and Telegram are configured', async () => {
+      vi.stubEnv('NEXT_PUBLIC_SENTRY_DSN', 'https://public@o0.ingest.sentry.example/0');
+      vi.stubEnv('TELEGRAM_BOT_TOKEN', 'bot-token');
+      vi.stubEnv('TELEGRAM_ALERT_CHAT_ID', '-100123');
+      const warn = vi.spyOn(logger, 'warn');
+
+      await register();
+
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('stays quiet on a preview deployment', async () => {
+      vi.stubEnv('VERCEL_ENV', 'preview');
       const warn = vi.spyOn(logger, 'warn');
 
       await register();
