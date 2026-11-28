@@ -3,7 +3,7 @@ import type { Instrumentation } from 'next';
 
 import type { logger } from '@/lib/observability';
 
-type IntegrationCheck = { config: ObservabilityConfig; logger: typeof logger };
+type BootLogging = { config: ObservabilityConfig; logger: typeof logger };
 
 type ProductionIntegration = { event: string; envVars: string[] };
 
@@ -48,7 +48,9 @@ export async function register(): Promise<void> {
       import('@yaniv120892/observability'),
       import('@/lib/observability'),
     ]);
-    warnAboutUnconfiguredIntegrations({ config: loadObservabilityConfig(), logger });
+    const config = loadObservabilityConfig();
+    warnAboutUnconfiguredIntegrations({ config, logger });
+    announceBoot({ config, logger });
   }
 }
 
@@ -56,9 +58,8 @@ export async function register(): Promise<void> {
  * Logging still works without these, so a missing one warns instead of failing the boot. Off
  * production they are optional.
  */
-function warnAboutUnconfiguredIntegrations({ config, logger }: IntegrationCheck): void {
-  const isLocalDevServer = process.env.NODE_ENV === 'development';
-  if (config.environment !== 'production' || isLocalDevServer) {
+function warnAboutUnconfiguredIntegrations({ config, logger }: BootLogging): void {
+  if (!isProductionServer(config)) {
     return;
   }
   for (const { event, envVars } of PRODUCTION_INTEGRATIONS) {
@@ -67,6 +68,24 @@ function warnAboutUnconfiguredIntegrations({ config, logger }: IntegrationCheck)
       logger.warn({ missing }, event);
     }
   }
+}
+
+/**
+ * One line per cold start on production, shipped although it is info: Better Stack then counts
+ * every boot, and a boot line missing there means log lines written outside a request are lost.
+ */
+function announceBoot({ config, logger }: BootLogging): void {
+  if (!isProductionServer(config)) {
+    return;
+  }
+  logger.info(
+    {
+      ship: true,
+      region: process.env.VERCEL_REGION,
+      deploymentId: process.env.VERCEL_DEPLOYMENT_ID,
+    },
+    'server_booted',
+  );
 }
 
 /**
@@ -84,3 +103,8 @@ export const onRequestError: Instrumentation.onRequestError = async (...requestE
     Sentry.captureRequestError(...requestErrorArguments);
   }
 };
+
+function isProductionServer(config: ObservabilityConfig): boolean {
+  const isLocalDevServer = process.env.NODE_ENV === 'development';
+  return config.environment === 'production' && !isLocalDevServer;
+}

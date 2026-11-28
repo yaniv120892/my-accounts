@@ -110,6 +110,41 @@ describe('instrumentation', () => {
     });
   });
 
+  describe('boot line', () => {
+    beforeEach(() => {
+      vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+      vi.stubEnv('VERCEL_ENV', 'production');
+      vi.stubEnv('VERCEL_REGION', 'fra1');
+      vi.stubEnv('VERCEL_DEPLOYMENT_ID', 'dpl_boot');
+    });
+
+    it('ships one line per production boot, so every cold start shows in Better Stack', async () => {
+      const info = vi.spyOn(logger, 'info');
+
+      await register();
+
+      expect(info).toHaveBeenCalledOnce();
+      expect(info).toHaveBeenCalledWith(
+        { ship: true, region: 'fra1', deploymentId: 'dpl_boot' },
+        'server_booted',
+      );
+    });
+
+    it.each([
+      ['a preview deployment', { VERCEL_ENV: 'preview' }],
+      ['a local dev server', { NODE_ENV: 'development' }],
+    ])('ships no boot line from %s', async (_label, environment) => {
+      for (const [name, value] of Object.entries(environment)) {
+        vi.stubEnv(name, value);
+      }
+      const info = vi.spyOn(logger, 'info');
+
+      await register();
+
+      expect(info).not.toHaveBeenCalled();
+    });
+  });
+
   describe('error alerts on production', () => {
     beforeEach(() => {
       vi.stubEnv('NEXT_RUNTIME', 'nodejs');
