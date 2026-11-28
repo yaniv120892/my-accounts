@@ -71,8 +71,8 @@ function warnAboutUnconfiguredIntegrations({ config, logger }: BootLogging): voi
 }
 
 /**
- * One line per cold start on production, shipped although it is info: Better Stack then counts
- * every boot, and a boot line missing there means log lines written outside a request are lost.
+ * One line per cold start on production, shipped although it is info, so the remote log sink
+ * counts every boot. A boot missing there means lines written outside a request are being lost.
  */
 function announceBoot({ config, logger }: BootLogging): void {
   if (!isProductionServer(config)) {
